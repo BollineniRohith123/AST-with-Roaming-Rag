@@ -1,0 +1,160 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:17-alpine
+    container_name: ast-analysis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ast_analysis
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ast-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  
+  # Java parser service
+  java-parser:
+    build:
+      context: ./java-parser
+      dockerfile: Dockerfile
+      args:
+        MAVEN_VERSION: 3.9.6
+        JDK_VERSION: 17-slim
+    container_name: ast-analysis-java-parser
+    restart: unless-stopped
+    volumes:
+      - ./java-parser:/app
+      - ./backend/lib:/app/output
+      - java-parser-maven-repo:/root/.m2
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ast_analysis
+    networks:
+      - ast-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+  
+  # Backend API
+  backend:
+    image: node:22-alpine
+    container_name: ast-analysis-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      java-parser:
+        condition: service_started
+    environment:
+      PGUSER: postgres
+      PGHOST: postgres
+      PGDATABASE: ast_analysis
+      PGPASSWORD: postgres
+      PGPORT: 5432
+      PORT: 3001
+      NODE_ENV: development
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: llama3.3:1b
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8001,http://frontend:3000
+      LOG_LEVEL: info
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - ./repos:/app/repos
+    working_dir: /app
+    command: >
+      sh -c "npm install --force --legacy-peer-deps && mkdir -p repos lib logs && node src/index.js"
+    networks:
+      - ast-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  
+  # Frontend Next.js app
+  frontend:
+    image: node:22-alpine
+    container_name: ast-analysis-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NODE_ENV: development
+    ports:
+      - "8001:3000"
+    volumes:
+      - ./frontend:/app
+    working_dir: /app
+    command: >
+      sh -c "npm install --legacy-peer-deps && npm run dev"
+    networks:
+      - ast-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+  
+  # Ollama service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ast-analysis-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_MODELS=/root/.ollama/models
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ast-network
+
+networks:
+  ast-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: ast-analysis-postgres-data
+  ollama-data:
+    name: ast-analysis-ollama-data
+  java-parser-maven-repo:
+    name: ast-analysis-java-parser-maven-repo
