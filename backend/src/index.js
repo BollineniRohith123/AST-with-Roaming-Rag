@@ -9,7 +9,7 @@ const fs = require('fs');
 const logger = require('./utils/logger');
 
 // Constants
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002; // Changed to 3002 to avoid conflicts
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Banner
@@ -21,7 +21,7 @@ const displayBanner = () => {
 ██╔══██║╚════██║   ██║       ██╔══██║██║╚██╗██║██╔══██║██║    ╚██╔╝  ╚════██║██║╚════██║
 ██║  ██║███████║   ██║       ██║  ██║██║ ╚████║██║  ██║███████╗██║   ███████║██║███████║
 ╚═╝  ╚═╝╚══════╝   ╚═╝       ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝╚══════╝
-                                                                                         
+
 =============== AST-based Analysis System with RAG Integration ===============
 Mode: ${NODE_ENV}
 Port: ${PORT}
@@ -49,11 +49,11 @@ const createDirectories = () => {
 // Check for Java parser JAR
 const checkJavaParser = () => {
   const libDir = path.join(__dirname, '../lib');
-  
+
   // Check if any JAR file exists
   const files = fs.readdirSync(libDir);
   const jarFile = files.find(file => file.endsWith('.jar'));
-  
+
   if (!jarFile) {
     logger.warn('No Java parser JAR found in the lib directory. Please build it before analyzing repositories.');
   } else {
@@ -66,22 +66,22 @@ const startServer = async () => {
   try {
     // Display banner
     displayBanner();
-    
+
     // Create necessary directories
     createDirectories();
-    
+
     // Check for Java parser JAR
     checkJavaParser();
-    
+
     // Initialize the database
     logger.info('Initializing database...');
     await db.initDatabase();
     logger.info('Database initialized successfully');
-    
+
     // Start the API server
     api.listen(PORT, () => {
       logger.info(`API server listening on port ${PORT}`);
-      
+
       // Print server information
       const nodeVersion = process.version;
       const memoryUsage = process.memoryUsage();

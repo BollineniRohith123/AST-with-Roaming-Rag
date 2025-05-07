@@ -8,9 +8,12 @@ const logger = require('../utils/logger');
  * Create default rate limiter for general API endpoints
  */
 const createDefaultRateLimiter = () => {
+  // Check if we're in development mode
+  const isDev = process.env.NODE_ENV === 'development';
+
   return rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    windowMs: isDev ? 1 * 60 * 1000 : 15 * 60 * 1000, // 1 minute in dev, 15 minutes in prod
+    max: isDev ? 1000 : 100, // Higher limit in development
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     message: {
@@ -26,8 +29,9 @@ const createDefaultRateLimiter = () => {
       res.status(options.statusCode).json(options.message);
     },
     skip: (req) => {
-      // Skip rate limiting for health check endpoint
-      return req.path === '/api/health';
+      // Skip rate limiting for health check endpoint and in development for repositories endpoint
+      return req.path === '/api/health' ||
+             (isDev && req.path === '/api/repositories');
     },
     keyGenerator: (req) => {
       // Use IP address as the key, with X-Forwarded-For header support
