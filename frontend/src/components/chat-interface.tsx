@@ -6,6 +6,9 @@ import { api, ApiError } from '../utils/api';
 import { ErrorAlert } from './ui/error-alert';
 import { Loading } from './ui/loading';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import remarkGfm from 'remark-gfm';
 
 interface ChatInterfaceProps {
   repositoryId: number;
@@ -74,10 +77,10 @@ export function ChatInterface({ repositoryId }: ChatInterfaceProps) {
   // Handle query submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Don't submit empty queries
     if (!query.trim()) return;
-    
+
     // Add user message to chat
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -85,16 +88,16 @@ export function ChatInterface({ repositoryId }: ChatInterfaceProps) {
       role: 'user',
       timestamp: new Date(),
     };
-    
+
     setMessages((prev) => [...prev, userMessage]);
     setQuery('');
     setIsLoading(true);
     setError(null);
-    
+
     try {
       // Send query to API
       const response = await api.chatWithCodebase(repositoryId, query);
-      
+
       // Add assistant message to chat
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -102,7 +105,7 @@ export function ChatInterface({ repositoryId }: ChatInterfaceProps) {
         role: 'assistant',
         timestamp: new Date(),
       };
-      
+
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       setError(err as ApiError);
@@ -185,7 +188,33 @@ export function ChatInterface({ repositoryId }: ChatInterfaceProps) {
               >
                 {message.role === 'assistant' ? (
                   <div className="prose dark:prose-invert max-w-none prose-sm">
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({node, inline, className, children, ...props}) {
+                          const match = /language-(\w+)/.exec(className || '');
+                          const language = match ? match[1] : 'java'; // Default to Java for code blocks
+
+                          return !inline ? (
+                            <SyntaxHighlighter
+                              style={typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? vscDarkPlus : vs}
+                              language={language}
+                              PreTag="div"
+                              showLineNumbers={true}
+                              {...props}
+                            >
+                              {String(children).replace(/\n$/, '')}
+                            </SyntaxHighlighter>
+                          ) : (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          );
+                        }
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
                   </div>
                 ) : (
                   <p>{message.content}</p>
@@ -208,17 +237,43 @@ export function ChatInterface({ repositoryId }: ChatInterfaceProps) {
         )}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="max-w-[80%] p-4 rounded-lg bg-gray-100 dark:bg-gray-700">
-              <Loading text="Thinking..." size="sm" />
+            <div className="max-w-[80%] p-4 rounded-lg bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+              <div className="flex items-center space-x-3">
+                <Loading size="sm" />
+                <div className="space-y-2">
+                  <p className="text-gray-700 dark:text-gray-300 text-sm">Analyzing your query...</p>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    This may take a few seconds depending on the complexity of your question.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
         {error && (
-          <ErrorAlert
-            title="Failed to get response"
-            message={error.message}
-            variant="error"
-          />
+          <div className="flex justify-start">
+            <div className="max-w-[80%] p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+              <h4 className="text-red-800 dark:text-red-400 font-medium mb-1">Failed to get response</h4>
+              <p className="text-red-700 dark:text-red-300 text-sm mb-2">{error.message}</p>
+              {error.message.includes('ECONNREFUSED') && (
+                <p className="text-red-600 dark:text-red-200 text-xs">
+                  The backend server appears to be offline. Please make sure it's running at http://localhost:3005.
+                </p>
+              )}
+              {error.message.includes('timed out') && (
+                <p className="text-red-600 dark:text-red-200 text-xs">
+                  The request took too long to process. This might be due to high server load or a complex query.
+                  Try a simpler question or try again later.
+                </p>
+              )}
+              <button
+                onClick={() => handleSubmit({ preventDefault: () => {} } as React.FormEvent)}
+                className="mt-2 text-xs bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 px-2 py-1 rounded hover:bg-red-200 dark:hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
